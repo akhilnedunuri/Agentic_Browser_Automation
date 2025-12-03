@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# ---------------- Install system dependencies ----------------
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
@@ -25,26 +25,20 @@ RUN apt-get update && \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for caching)
+# ---------------- Copy requirements and install Python deps ----------------
 COPY requirements.txt .
-
-# Upgrade pip
 RUN pip install --upgrade pip
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright globally
-RUN pip install --no-cache-dir playwright
+# ---------------- Install Playwright and browsers ----------------
+RUN pip install --no-cache-dir playwright && \
+    python -m playwright install --with-deps chromium firefox webkit
 
-# Install browsers for Playwright
-RUN playwright install --with-deps chromium firefox webkit
-
-# Copy the rest of the code
+# ---------------- Copy application code ----------------
 COPY . .
 
 # Expose FastAPI port
 EXPOSE 8000
 
-# Command to run the app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# ---------------- Command to run app with Xvfb ----------------
+CMD ["sh", "-c", "xvfb-run --server-args='-screen 0 1920x1080x24' uvicorn main:app --host 0.0.0.0 --port 8000"]

@@ -21,7 +21,7 @@ executor = ThreadPoolExecutor(max_workers=1)
 app = FastAPI(
     title="Stable Browser Automation API",
     description="Crash-proof Browser + Playwright + Gemini Agent",
-    version="9.0.0"
+    version="9.1.0"
 )
 
 # ---------------- CORS ----------------
@@ -43,7 +43,13 @@ def serve_frontend():
 
 # ---------------- Browser Initialization ----------------
 async def start_browser():
-    browser = Browser(keep_alive=True, headless=False)
+    """
+    Headless=False to see automation, uses Xvfb in Docker for virtual display.
+    """
+    browser = Browser(
+        keep_alive=True,
+        headless=False  # visual mode
+    )
     await browser.start()
     return browser
 
@@ -64,7 +70,6 @@ def extract_last_step(agent_result):
     - success message
     """
     try:
-        # result.history is a list of steps
         history = agent_result.history
         last_step = history[-1]  # last step only
         if hasattr(last_step, "done") and last_step.done:
@@ -73,12 +78,10 @@ def extract_last_step(agent_result):
             done_text = last_step.extracted_content
         else:
             done_text = str(agent_result)
-
     except Exception as e:
         print("LAST STEP PARSE ERROR:", e)
         done_text = str(agent_result)
 
-    # Format output exactly like you want
     output = (
         f"📄 Final Result:\n{done_text}\n\n"
         "INFO     [Agent] ✅ Task completed successfully"
@@ -94,7 +97,7 @@ def run_agent_sync(prompt: str):
             task=prompt,
             model="gemini-2.5-pro",
             browser=browser,
-            headless=False
+            headless=False  # visual automation
         )
         result = await agent.run()
         clean_output = extract_last_step(result)
