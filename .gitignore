@@ -1,32 +1,18 @@
-# ---------------- Python ----------------
+# Python
 __pycache__/
-*.py[cod]
-*.pyo
+*.pyc
 
-# ---------------- Virtual Environment ----------------
+# Virtual env
 venv/
 
-# ---------------- Environment Variables ----------------
+# dotenv
 .env
 
-# ---------------- Editor / IDE ----------------
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# ---------------- Logs ----------------
+# Logs
 *.log
 
-# ---------------- OS Files ----------------
-.DS_Store
-Thumbs.db
-
-# ---------------- Playwright / Browsers ----------------
-playwright-report/
-ms-playwright/
-node_modules/
-
-# ---------------- Docker ----------------
-*.dockerfile
-docker-compose.override.yml
+# DO NOT IGNORE FRONTEND!
