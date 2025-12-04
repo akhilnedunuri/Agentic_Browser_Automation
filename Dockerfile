@@ -14,6 +14,7 @@ RUN apt-get update && \
     gnupg \
     ca-certificates \
     xvfb \
+    xauth \ 
     libnss3 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
