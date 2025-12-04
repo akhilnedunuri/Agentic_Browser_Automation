@@ -14,12 +14,16 @@ runBtn.addEventListener('click', async () => {
     showText("Starting agent...\n");
 
     try {
-        const url = `/run-agent?prompt=${encodeURIComponent(prompt)}`;
-        const res = await fetch(url, { method: 'POST' });
+        const res = await fetch("/run-agent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt })
+        });
+
         const data = await res.json();
 
         if (data.status === "success") {
-            showText(data.output); // only show final result + INFO
+            showText(data.output);
         } else {
             showText("Unexpected response:\n" + JSON.stringify(data, null, 2));
         }
@@ -31,7 +35,7 @@ runBtn.addEventListener('click', async () => {
 // ---------------- CLOSE BROWSER ----------------
 closeBtn.addEventListener('click', async () => {
     try {
-        const res = await fetch('/close-browser', { method: 'POST' });
+        const res = await fetch("/close-browser", { method: "POST" });
         const data = await res.json();
         showText(data.message || JSON.stringify(data));
     } catch (err) {
