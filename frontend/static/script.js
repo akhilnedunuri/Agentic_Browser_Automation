@@ -1,78 +1,60 @@
 const runBtn = document.getElementById("runBtn");
-const closeBtn = document.getElementById("closeBtn");
 const output = document.getElementById("output");
 
-function show(message) {
-    output.textContent = message;
+let ws = null;
+
+function append(text) {
+    output.textContent += text + "\n";
+    output.scrollTop = output.scrollHeight;
 }
 
-// ---------------- RUN AGENT ----------------
-runBtn.addEventListener("click", async () => {
-    const prompt = document.getElementById("prompt").value.trim();
+function clearOutput() {
+    output.textContent = "";
+}
 
-    if (!prompt) {
-        alert("Please enter a prompt!");
+runBtn.addEventListener("click", async () => {
+
+    const prompt = document.getElementById("prompt").value.trim();
+    if (!prompt) return alert("Enter a prompt!");
+
+    clearOutput();
+    append("⚙️ Starting agent...\nWaiting for logs...\n");
+
+    // --- CLOSE OLD WS ---
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) {
+        try { ws.close(); } catch {}
+    }
+
+    // --- START AGENT ---
+    const res = await fetch("/run-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+    });
+
+    const data = await res.json();
+    if (data.status !== "started") {
+        append("❌ Failed to start agent: " + data.message);
         return;
     }
 
-    show("⚙️ Running agent... Please wait...");
+    // --- OPEN NEW WS DELAYED ---
+    // waiting 150ms ensures backend event loop + logs are ready
+    setTimeout(() => {
 
-    try {
-        const response = await fetch("/run-agent", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt }),
-        });
+        ws = new WebSocket("ws://127.0.0.1:8000/logs");
 
-        const rawText = await response.text(); // get raw response
+        ws.onopen = () => {
+            append("🔌 Connected to log stream...\n");
+        };
 
-        let data;
+        ws.onmessage = (event) => {
+            append(event.data);
+        };
 
-        try {
-            data = JSON.parse(rawText); // convert to JSON
-        } catch (err) {
-            show("❌ Backend returned invalid JSON:\n\n" + rawText);
-            return;
-        }
+        ws.onerror = () => append("❌ WebSocket error");
 
-        // SUCCESS CASE
-        if (data.status === "success") {
-            show("✅ Agent Output:\n\n" + data.output);
-        } else {
-            // ERROR CASE
-            show("❌ Error:\n\n" + (data.output || "Unknown backend error"));
-        }
+        ws.onclose = () => append("\n🔌 Log stream closed.");
 
-    } catch (error) {
-        show("❌ Network Error:\n" + error.message);
-    }
-});
-
-// ---------------- CLOSE BROWSER ----------------
-closeBtn.addEventListener("click", async () => {
-    show("🛑 Closing browser...");
-
-    try {
-        const response = await fetch("/close-browser", {
-            method: "POST",
-        });
-
-        const rawText = await response.text();
-        let data;
-
-        try {
-            data = JSON.parse(rawText);
-        } catch (err) {
-            show("❌ Backend returned invalid JSON:\n\n" + rawText);
-            return;
-        }
-
-        if (data.message) {
-            show("🛑 " + data.message);
-        } else {
-            show("⚠️ Unknown backend response");
-        }
-    } catch (error) {
-        show("❌ Network Error:\n" + error.message);
-    }
+    }, 150);
 });

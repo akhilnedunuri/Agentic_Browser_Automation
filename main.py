@@ -1,27 +1,33 @@
 import os
 import asyncio
-from fastapi import FastAPI, HTTPException
+import logging
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Process, Queue
 from browser_use import Agent, Browser
 
 load_dotenv()
 
-# ---------------- Thread + Browser State ----------------
-class AgentThreadState:
-    loop = None
-    browser = None
+# ------------------------------------------------------
+# GLOBAL STATE
+# ------------------------------------------------------
+class AgentState:
+    running = False
 
-state = AgentThreadState()
-executor = ThreadPoolExecutor(max_workers=1)
+state = AgentState()
 
+# Use multiprocessing Queue
+log_queue = Queue()
+
+
+# ------------------------------------------------------
+# FASTAPI
+# ------------------------------------------------------
 app = FastAPI()
-
-# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,107 +35,138 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- Frontend Serving ----------------
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend")
 STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
-
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def serve_frontend():
-    index = os.path.join(FRONTEND_DIR, "index.html")
-    if not os.path.exists(index):
-        raise HTTPException(404, "index.html missing")
-    return FileResponse(index)
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
-# ---------------- Pydantic ----------------
+# ------------------------------------------------------
+# REQUEST MODEL
+# ------------------------------------------------------
 class PromptRequest(BaseModel):
     prompt: str
 
 
-# ---------------- Browser Init ----------------
-async def start_browser():
-    browser = Browser(keep_alive=True, headless=False)
-    await browser.start()
-    return browser
+# ------------------------------------------------------
+# LOGGING HANDLER (CHILD PROCESS)
+# ------------------------------------------------------
+class ChildProcessQueueHandler(logging.Handler):
+    """Send logs from child process to main process queue."""
+    def __init__(self, queue):
+        super().__init__()
+        self.queue = queue
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.queue.put(msg)
 
 
-def init_thread():
-    """Initialize background event loop and browser only once."""
-    if state.loop is None:
-        state.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(state.loop)
+# ------------------------------------------------------
+# CHILD PROCESS RUNNER
+# ------------------------------------------------------
+def run_agent_process(prompt: str, queue: Queue):
+    """
+    This runs INSIDE the new process.
+    We must re-create logging handlers here!
+    """
+    # New event loop
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    loop = asyncio.get_event_loop()
 
-    if state.browser is None:
-        state.browser = state.loop.run_until_complete(start_browser())
+    # ------------------------------
+    # Attach logging handler INSIDE child process
+    # ------------------------------
+    handler = ChildProcessQueueHandler(queue)
+    handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
 
-    return state.loop, state.browser
+    browser_logger = logging.getLogger("browser_use")
+    browser_logger.handlers.clear()
+    browser_logger.setLevel(logging.INFO)
+    browser_logger.addHandler(handler)
 
+    # Also send root logs
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(handler)
 
-# ---------------- Agent Wrapper ----------------
-def extract_last(agent_result):
-    try:
-        last = agent_result.history[-1]
-        if hasattr(last, "done") and last.done:
-            return last.done
-        if hasattr(last, "extracted_content") and last.extracted_content:
-            return last.extracted_content
-    except:
-        pass
-    return str(agent_result)
+    async def _run_task():
+        queue.put("⚙️ Starting agent task...")
 
+        state.running = True
 
-def run_agent_sync(prompt):
-    loop, browser = init_thread()
+        browser = Browser(keep_alive=False, headless=False)
+        await browser.start()
 
-    async def _run():
         agent = Agent(task=prompt, model="gemini-2.5-pro", browser=browser)
-        result = await agent.run()
-        return extract_last(result)
 
-    return loop.run_until_complete(_run())
+        await agent.run()
 
-
-# ---------------- API: RUN AGENT ----------------
-@app.post("/run-agent")
-async def run_agent(req: PromptRequest):
-    if not os.environ.get("GOOGLE_API_KEY"):
-        return {"status": "error", "output": "Missing GOOGLE_API_KEY"}
-
-    try:
-        output = await asyncio.get_event_loop().run_in_executor(
-            executor, lambda: run_agent_sync(req.prompt)
-        )
-        return {"status": "success", "output": output}
-
-    except Exception as e:
-        print("AGENT ERROR:", e)
-
-        # Attempt browser cleanup
+        # Cleanup safely
         try:
-            if state.browser:
-                state.loop.run_until_complete(state.browser.kill())
-            state.browser = None
+            await browser.kill()
         except:
             pass
 
-        return {
-            "status": "error",
-            "output": f"Agent crashed: {str(e)}"
-        }  # <---- ALWAYS RETURN VALID JSON
+        try:
+            await browser.playwright.close()
+        except:
+            pass
+
+        try:
+            browser.session_manager.reset(force=True)
+        except:
+            pass
+
+        queue.put("✅ Automation done. Browser closed successfully.")
+        state.running = False
+
+    loop.run_until_complete(_run_task())
 
 
-# ---------------- API: CLOSE BROWSER ----------------
-@app.post("/close-browser")
-async def close_browser():
+# ------------------------------------------------------
+# START TASK
+# ------------------------------------------------------
+@app.post("/run-agent")
+async def run_agent(req: PromptRequest):
+
+    if state.running:
+        return {"status": "error", "message": "⚠️ Agent already running"}
+
+    # Clear old logs
+    while not log_queue.empty():
+        log_queue.get_nowait()
+
+    # Start new isolated process
+    process = Process(target=run_agent_process, args=(req.prompt, log_queue))
+    process.start()
+
+    return {"status": "started"}
+
+
+# ------------------------------------------------------
+# LIVE LOG STREAM
+# ------------------------------------------------------
+@app.websocket("/logs")
+async def websocket_logs(ws: WebSocket):
+    await ws.accept()
+    await ws.send_text("🔌 Connected to log stream...")
+
     try:
-        if state.browser:
-            state.loop.run_until_complete(state.browser.kill())
-        state.browser = None
-        return {"status": "success", "message": "Browser closed"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        while True:
+            try:
+                msg = log_queue.get_nowait()
+                await ws.send_text(msg)
+            except:
+                pass
+
+            await asyncio.sleep(0.05)
+    except WebSocketDisconnect:
+        pass
 
 
 @app.get("/health")

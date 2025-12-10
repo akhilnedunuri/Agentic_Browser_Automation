@@ -1,0 +1,22 @@
+sports:
+“Search for today’s English Premier League matches and summarize the live standings, scores, and key moments.”
+“Find Virat Kohli’s latest match performance statistics and summarize the results in simple terms.”
+“Compare Real Madrid vs Barcelona’s recent 5 match performances and tell me which team is in better form.”
+Find today's cricket match schedule for all international teams and list the two biggest upcoming matches (by opponent ranking), including the teams and the start time."
+
+News:
+“Check the top political news in India today and summarize it in under 5 bullet points.”
+“Check the latest NIFTY and SENSEX news updates and summarize what’s happening in the stock market today.”
+Search for the latest price of gold (24-karat, 10 grams) in Hyderabad today, and report the exact price along with the source website's name."
+
+
+shopping:
+“Go to Amazon and add the latest iPhone 16 Pro Max, 256GB variant, to my cart. Choose the lowest-priced seller.”
+“Search Amazon for a budget smartphone under ₹10,000, choose the best-rated option, and add it to the cart.”
+“Search Amazon for Bluetooth earphones under ₹2,000. Pick the one with the best rating and discount. Add it to my cart.”
+Search for the 'iPhone 16 Pro Max' and 'Samsung Galaxy S25 Ultra' specifications, and compare their primary camera sensor size (megapixels) and standard storage options (GB) in a two-column table."
+Go to the Amazon website and select the best mobile phones under 10000 and add the mobile to the cart
+
+Hotels:
+“Search for hotels in Hyderabad for tomorrow night and summarize the top 3 cheapest options.”
+“Search for seats availability from Hyderabad to Chennai for the next Saturday. Summarize the results.”
